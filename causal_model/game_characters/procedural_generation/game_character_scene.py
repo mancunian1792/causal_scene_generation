@@ -3,7 +3,7 @@ import os
 
 image_dict = {
         "Satyr": {
-            "base_path": "images/satyr/PNG/",
+            "base_path": "../images/satyr/PNG/",
             "Attacking": "/reference/Attacking/attack.png",
             "Taunt": "/reference/Taunt/taunt.png",
             "Walking": "/reference/Walking/walking.png",
@@ -12,7 +12,7 @@ image_dict = {
             "Idle": "/reference/Idle/idle.png"
         },
         "Golem": {
-            "base_path": "images/golem/PNG/",
+            "base_path": "../images/golem/PNG/",
             "Attacking": "/reference/Attacking/attack.png",
             "Taunt": "/reference/Taunt/taunt.png",
             "Walking": "/reference/Walking/walking.png",
