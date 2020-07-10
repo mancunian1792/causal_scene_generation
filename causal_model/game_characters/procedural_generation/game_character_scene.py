@@ -45,4 +45,4 @@ def draw_duel(actor, reactor):
     #Flipping the reactor to give the feel of a duel.
     img2 = ImageOps.mirror(img2)
     
-    return get_concat_h(img1, img2)
+    return get_concat_h(img1, img2), img1, img2
