@@ -10,10 +10,10 @@ import torch.nn.functional as F
 from functools import reduce
 
 class GameCharacterFullData(Dataset):
-  def __init__(self, transforms=None, mode = "train"):
+  def __init__(self, transforms, root_path, mode):
     # Change the following path to a more generalizable form. Like download it from
     # github or something like that. Make it usable to anyone.
-    self.root_path = './data/'
+    self.root_path = root_path
     self.train_path = self.root_path + 'train/'
     self.test_path = self.root_path + 'test/'
     self.train_csv = self.train_path + 'train.csv'
@@ -48,9 +48,9 @@ class GameCharacterFullData(Dataset):
     else:
       return self.test_df.shape[0]
 
-def setup_data_loaders(dataset, batch_size, transforms):
-    train_dataset = dataset(transforms, mode="train")
-    test_dataset = dataset(transforms, mode="test")    
+def setup_data_loaders(dataset, root_path, batch_size, transforms):
+    train_dataset = dataset(transforms, root_path, mode="train")
+    test_dataset = dataset(transforms, root_path, mode="test")    
 
     train_loader = DataLoader(train_dataset, shuffle=True, batch_size=batch_size)
     test_loader = DataLoader(test_dataset, shuffle=True, batch_size=batch_size)

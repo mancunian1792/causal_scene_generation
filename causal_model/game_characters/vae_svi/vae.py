@@ -7,35 +7,35 @@ import numpy as np
 import torch
 import torch.nn as nn
 import visdom
-
+import os
 import pyro
 import pyro.distributions as dist
 from pyro.infer import SVI, JitTrace_ELBO, Trace_ELBO
 from pyro.optim import Adam
 from utils.game_character_dataloader import GameCharacterFullData, setup_data_loaders
-from torchvision import transforms
+from torchvision import transforms,models
+
+GDRIVE_PATH = "gdrive/My Drive/causal_scene_generation/vae_svi/data/"
+LOCAL_PATH = "./data/"
+
+PATH = GDRIVE_PATH if 'COLAB_GPU' in os.environ else LOCAL_PATH
 
 
-def create_head(num_features , number_classes ,dropout_prob=0.5 ,activation_func =nn.ReLU):
-  features_lst = [num_features , num_features//2 , num_features//4]
-  layers = []
-  for in_f ,out_f in zip(features_lst[:-1] , features_lst[1:]):
-    layers.append(nn.Linear(in_f , out_f))
-    layers.append(activation_func())
-    layers.append(nn.BatchNorm1d(out_f))
-    if dropout_prob !=0 : layers.append(nn.Dropout(dropout_prob))
-  layers.append(nn.Linear(features_lst[-1] , number_classes))
-  return nn.Sequential(*layers)
+class Flatten(nn.Module):
+    def forward(self, input):
+        return input.view(input.size(0), -1)
 
-
+class UnFlatten(nn.Module):
+    def forward(self, input, size=1024):
+        return input.view(input.size(0), size, 1, 1)
 
 # define the PyTorch module that parameterizes the
 # diagonal gaussian distribution q(z|x)
 class Encoder(nn.Module):
-    def __init__(self, z_dim, hidden_dim):
+    def __init__(self, z_dim, hidden_dim=1024):
         super().__init__()
-        # setup the three linear transformations used
-        self.fc1 = nn.Linear(40000, hidden_dim)
+        self.cnn = get_cnn_encoder(image_channels=3) # Currently this returns only for 1024 hidden dimensions. Need to change that
+        # setup the two linear transformations used
         self.fc21 = nn.Linear(hidden_dim, z_dim)
         self.fc22 = nn.Linear(hidden_dim, z_dim)
         # setup the non-linearities
@@ -44,9 +44,10 @@ class Encoder(nn.Module):
     def forward(self, x):
         # define the forward computation on the image x
         # first shape the mini-batch to have pixels in the rightmost dimension
-        x = x.reshape(-1, 40000)
+        #x = x.reshape(-1, 40000)
         # then compute the hidden units
-        hidden = self.softplus(self.fc1(x))
+        hidden = self.cnn(x)
+        hidden = self.softplus(hidden) # This should return a [1, 1024] vector.
         # then return a mean vector and a (positive) square root covariance
         # each of size batch_size x z_dim
         z_loc = self.fc21(hidden)
@@ -54,14 +55,62 @@ class Encoder(nn.Module):
         return z_loc, z_scale
 
 
+def get_seq_decoder(hidden_dim=1024, image_channels=3):
+    return nn.Sequential(
+            UnFlatten(), # (32, 1024, 1, 1)
+            nn.ConvTranspose2d(hidden_dim, 512, kernel_size=7, stride=2),
+            nn.ReLU(),
+            nn.ConvTranspose2d(512, 256, kernel_size=7, stride=2),
+            nn.ReLU(),
+            nn.ConvTranspose2d(256, 128, kernel_size=7, stride=2),
+            nn.ReLU(),
+            nn.ConvTranspose2d(128, 64, kernel_size=7, stride=2),
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 32, kernel_size=7, stride=2),
+            nn.ReLU(),
+            nn.ConvTranspose2d(32, 16, kernel_size=5, stride=2),
+            nn.ReLU(),
+            nn.ConvTranspose2d(16, 8, kernel_size=13, stride=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(8, 4, kernel_size=11, stride=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(4, image_channels, kernel_size=2, stride=1),
+            nn.Sigmoid() # (32, 3, 400,400)
+        )
+
+def get_cnn_encoder(image_channels=3):
+    return nn.Sequential(
+            nn.Conv2d(image_channels, 8, kernel_size=5, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(8, 16, kernel_size=5, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(16, 32, kernel_size=3, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size=3, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(128, 256, kernel_size=3, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(256, 512, kernel_size=2, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(512, 1024, kernel_size=2, stride=1),
+            nn.ReLU(),
+            Flatten()
+        )
+
+
+
+
 # define the PyTorch module that parameterizes the
 # observation likelihood p(x|z)
 class Decoder(nn.Module):
     def __init__(self, z_dim, hidden_dim):
         super().__init__()
+        self.cnn_decoder = get_seq_decoder(hidden_dim, 3) # image_channels is 3
         # setup the two linear transformations used
         self.fc1 = nn.Linear(z_dim, hidden_dim)
-        self.fc21 = nn.Linear(hidden_dim, 40000)
+        #self.fc21 = nn.Linear(hidden_dim, 400)
         # setup the non-linearities
         self.softplus = nn.Softplus()
 
@@ -71,7 +120,7 @@ class Decoder(nn.Module):
         hidden = self.softplus(self.fc1(z))
         # return the parameter for the output Bernoulli
         # each is of size batch_size x 784
-        loc_img = torch.sigmoid(self.fc21(hidden))
+        loc_img = self.cnn_decoder(hidden)
         return loc_img
 
 
@@ -79,11 +128,11 @@ class Decoder(nn.Module):
 class VAE(nn.Module):
     # by default our latent space is 50-dimensional
     # and we use 500 hidden units
-    def __init__(self, z_dim=50, hidden_dim=500, use_cuda=False):
+    def __init__(self, z_dim=32, hidden_dim=1024, use_cuda=False):
         super().__init__()
         # create the encoder and decoder networks
         self.encoder = Encoder(z_dim, hidden_dim)
-        self.decoder = Decoder(z_dim, hidden_dim)
+        self.decoder = Decoder(z_dim, hidden_dim) # 3 channel image.
 
         if use_cuda:
             # calling cuda() here will put all the parameters of
@@ -104,9 +153,8 @@ class VAE(nn.Module):
             z = pyro.sample("latent", dist.Normal(z_loc, z_scale).to_event(1))
             # decode the latent code z
             loc_img = self.decoder.forward(z)
-
             # score against actual images
-            pyro.sample("obs", dist.Bernoulli(loc_img).to_event(1), obs=x.reshape(-1, 40000))
+            pyro.sample("obs", dist.Bernoulli(loc_img).to_event(3), obs=x)
             # return the loc so we can visualize it later
             return loc_img
 
@@ -138,7 +186,7 @@ def plot_vae_samples(vae, visdom_session):
         for rr in range(100):
             # get loc from the model
             sample_loc_i = vae.model(x)
-            img = sample_loc_i[0].view(1, 200, 200).cpu().data.numpy()
+            img = sample_loc_i[0].view(3, 400, 400).cpu().data.numpy()
             images.append(img)
         vis.images(images, 10, 2)
 
@@ -148,12 +196,12 @@ def main(args):
 
     # setup MNIST data loaders
     # train_loader, test_loader
-    transform = transforms.Compose([transforms.Grayscale(num_output_channels=1),
-                                    transforms.Resize((200,200)),
+    transform = transforms.Compose([
+                                    transforms.Resize((400,400)),
                                     transforms.ToTensor()
                                 ])
 
-    train_loader, test_loader = setup_data_loaders(dataset=GameCharacterFullData, batch_size=32, transforms=transform)
+    train_loader, test_loader = setup_data_loaders(dataset=GameCharacterFullData, root_path = PATH, batch_size=32, transforms=transform)
 
     # setup the VAE
     vae = VAE(use_cuda=args.cuda)
@@ -169,7 +217,7 @@ def main(args):
    
      # setup visdom for visualization
     if args.visdom_flag:
-        vis = visdom.Visdom()
+        vis = visdom.Visdom(port='8097')
 
     train_elbo = []
     test_elbo = []
@@ -184,7 +232,6 @@ def main(args):
             if args.cuda:
                 x = x.cuda()
             # do ELBO gradient and accumulate loss
-            x = x.squeeze(1)
             epoch_loss += svi.step(x)
 
         # report training diagnostics
@@ -212,9 +259,9 @@ def main(args):
                         for index in reco_indices:
                             test_img = x[index, :]
                             reco_img = vae.reconstruct_img(test_img)
-                            vis.image(test_img.reshape(200, 200).detach().cpu().numpy(),
+                            vis.image(test_img.reshape(400, 400).detach().cpu().numpy(),
                                       opts={'caption': 'test image'})
-                            vis.image(reco_img.reshape(200, 200).detach().cpu().numpy(),
+                            vis.image(reco_img.reshape(400, 400).detach().cpu().numpy(),
                                       opts={'caption': 'reconstructed image'})
             # report test diagnostics
             normalizer_test = len(test_loader.dataset)
