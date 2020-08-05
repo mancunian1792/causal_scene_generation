@@ -30,17 +30,29 @@ class GameCharacterFullData(Dataset):
     else:
       d = self.test_df.iloc[idx]
       image = Image.open(self.test_path + d["filename"] + ".png").convert("RGB")
-    label = torch.tensor(d[1:].tolist(), dtype=torch.float32)
+    
+    # Extracting only the action reaction labels, coz that's what we condition on.
+    lbl = d[["actor_action_Attacking", "actor_action_Taunt", "actor_action_Walking", "reactor_action_Attacking", "reactor_action_Dying", "reactor_action_Hurt", "reactor_action_Idle"]]
+    actor = (torch.tensor(d[["actor_name_Satyr", "actor_name_Golem"]].tolist(), dtype=torch.float32)!=0).nonzero().squeeze(1)[0]
+    reactor = (torch.tensor(d[["reactor_name_Satyr", "reactor_name_Golem"]].tolist(), dtype=torch.float32)!=0).nonzero().squeeze(1)[0]
+
+    actor_type = ((torch.tensor(d[["actor_type_satyr1", "actor_type_satyr2", "actor_type_satyr3", "actor_type_golem1", "actor_type_golem2", "actor_type_golem3"]].tolist(), dtype=torch.float32)!=0).nonzero().squeeze(1)[0]) % 3
+    reactor_type = ((torch.tensor(d[["reactor_type_satyr1", "reactor_type_satyr2", "reactor_type_satyr3", "reactor_type_golem1", "reactor_type_golem2", "reactor_type_golem3"]].tolist(), dtype=torch.float32)!=0).nonzero().squeeze(1)[0]) % 3
+
+
+
+
+    label = torch.tensor(lbl.tolist(), dtype=torch.float32)
     if self.transforms is not None:
         
         xp = self.transforms(image)
       # transform x to a linear tensor from bx * a1 * a2 * ... --> bs * A
-        xp_1d_size = reduce(lambda a, b: a * b, xp.size()[1:])
+        #xp_1d_size = reduce(lambda a, b: a * b, xp.size()[1:])
 
-        xp = xp.view(-1, xp_1d_size)
-        xp = xp.squeeze(0)
+        #xp = xp.view(-1, xp_1d_size)
+        #xp = xp.squeeze(0)
         assert not np.isnan(xp.sum())
-    return xp, label
+    return xp, label, actor, reactor, actor_type, reactor_type
 
   def __len__(self):
     if self.mode == "train":
