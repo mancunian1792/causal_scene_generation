@@ -9,6 +9,11 @@ game_net <- model2network("[AC][RC][AT|AC][RT|RC][AS|AT:AC][AD|AT:AC][AA|AT:AC][
 ## Plot the dag
 graphviz.plot(game_net)
 
+## Create the dag
+game_net_full <- model2network("[Actor Character][Reactor Character][Actor Type|Actor Character][Reactor Type|Reactor Character][Actor Strength|Actor Type:Actor Character][Actor Defense|Actor Type:Actor Character][Actor Attack|Actor Type:Actor Character][Reactor Strength|Reactor Type:Reactor Character][Reactor Defense|Reactor Type:Reactor Character][Reactor Attack|Reactor Type:Reactor Character][Action|Actor Strength:Actor Defense:Actor Attack][Reaction|Reactor Strength:Reactor Defense:Reactor Attack:Action][IMG|Action:Reaction]")
+
+## Plot the dag
+graphviz.plot(game_net_full, shape ='rectangle' )
 
 # Fit a custom dag with probabilities
 
@@ -67,12 +72,14 @@ dimnames(cptRRCT)<- list("RRCT"=c("Dying", "Hurt", "Idle", "Attack"), "RA"= c("L
 
 
 dfit <- custom.fit(game_net, dist = list(AC = cptAC, RC=cptRC, AT= cptAT, RT=cptRT, AA=cptAA, AD=cptAD, AS=cptAS, RA=cptRA, RS=cptRS, RD=cptRD, AACT=cptAACT, RRCT=cptRRCT))
+grainObj <- as.grain(dfit)
 
-#dfit
 
-getinvProb<- function(event, evidence) {
-  cpstmt <- paste("cpquery(dfit, ",event, ",", evidence, ")", sep = "")
-  expr <- parse(text= cpstmt)
+getinvProb<- function(node, ev, event, evidence) {
+  #cpstmt <- paste("cpquery(dfit, ",event, ",", evidence, ")", sep = "")
+  grStmt <- paste("querygrain(grainObj, nodes = ", event, ", evidence = ", evidence, ")[['", node, "']]", "[['", ev, "']]", sep="")
+  print(grStmt)
+  expr <- parse(text= grStmt)
   return(eval(expr))
 }
 
@@ -83,12 +90,46 @@ reactionNodes <- c("RA", "RD", "RS")
 getActionInvCpt <- function(){
   cpt <- list()
   for(node in actionNodes){
-    cpt[[node]] <- getActCptNode(node)
-    dim(cpt[[node]])<- c(2,3,3,2)
-    dimnames(cpt[[node]])<- list(`node`=  c("LOW", "HIGH"), "AACT"=c("Attack", "Taunt", "Walk"),"AT"= c("Type1", "Type2", "Type3"), "AC"= c("Satyr", "Golem"))
+    cpt[[node]] <- normalizeProb(getActCptNode(node))
+    #dim(cpt[[node]])<- c(2,3,3,2)
+    #dimnames(cpt[[node]])<- list(`node`=  c("LOW", "HIGH"), "AACT"=c("Attack", "Taunt", "Walk"),"AT"= c("Type1", "Type2", "Type3"), "AC"= c("Satyr", "Golem"))
   }
   
   return(cpt)
+}
+
+normalizeProb<- function(arr){
+  # For every 2 elements, divide each element by its sum.
+  idx1<-1
+  idx2<-2
+  while(idx2 <= length(arr)){
+    totalProb<- arr[[idx1]] + arr[[idx2]]
+    arr[[idx1]] <- arr[[idx1]]/totalProb
+    arr[[idx2]] <- arr[[idx2]]/totalProb
+    
+    idx1 <- idx1 + 2
+    idx2 <- idx2 + 2
+  }
+  return(arr)
+}
+
+getReactionInvCpt <- function(){
+  cpt <- list()
+  for(node in reactionNodes){
+    cpt[[node]] <- normalizeProb(getRctCptNode(node))
+    #dim(cpt[[node]])<- c(2,4,3,2)
+    #dimnames(cpt[[node]])<- list(`node`=  c("LOW", "HIGH"), "RRCT"=c("Dying", "Hurt", "Idle", "Attack"),"AT"= c("Type1", "Type2", "Type3"), "AC"= c("Satyr", "Golem"))
+  }
+  
+  return(cpt)
+}
+
+getProb<- function(node, ev, act, typ, chr){
+  event = paste("(", node, "==", "'", ev, "')", sep = "")
+  print(event)
+  evidence = constructEvidence(act, typ, chr)
+  print(evidence)
+  return(getinvProb(event, evidence))
 }
 
 getActCptNode <- function(node){
@@ -98,9 +139,10 @@ getActCptNode <- function(node){
     for(typ in evidence2Values){
       for(chr in evidence3Values){
         for(ev in eventValues){
-          event = paste("(", node, "==", "'", ev, "')", sep = "")
+          #event = paste("(", node, "==", "'", ev, "')", sep = "")
+          event = paste("c('", node, "')", sep="")
           evidence = constructEvidence(act, typ, chr)
-          probs[[idx]] <- getinvProb(event, evidence)
+          probs[[idx]] <- getinvProb(node, ev, event, evidence)
           idx<- idx+1
         }
       }
@@ -109,8 +151,14 @@ getActCptNode <- function(node){
   return(probs)
 }
 
+
 constructEvidence <- function(act, typ, char){
-  st<- paste("(AACT==", "'", act, "'", " & ", "AT==", "'",typ, "'", " & ", "AC==", "'",char, "')", sep="")
+  st<- paste("list(AACT=", "'", act, "'", " , ", "AT=", "'",typ, "'", " , ", "AC=", "'",char, "')", sep="")
+  return(st)
+}
+
+constructRCTEvidence <- function(act, typ, char){
+  st<- paste("list(RRCT=", "'", act, "'", " , ", "AT=", "'",typ, "'", " , ", "AC=", "'",char, "')", sep="")
   return(st)
 }
 
@@ -119,10 +167,39 @@ evidence1Values <- c("Attack", "Taunt", "Walk")
 evidence2Values <- c("Type1", "Type2", "Type3")
 evidence3Values <- c("Satyr", "Golem")
 
+RcteventValues <- c("LOW", "HIGH")
+Rctevidence1Values <- c("Dying", "Hurt", "Idle", "Attack")
+Rctevidence2Values <- c("Type1", "Type2", "Type3")
+Rctevidence3Values <- c("Satyr", "Golem")
 
+
+getRctCptNode <- function(node){
+  idx <- 1
+  probs <- c()
+  for(act in Rctevidence1Values){
+    for(typ in Rctevidence2Values){
+      for(chr in Rctevidence3Values){
+        for(ev in RcteventValues){
+          #event = paste("(", node, "==", "'", ev, "')", sep = "")
+          event = paste("c('", node, "')", sep="")
+          evidence = constructRCTEvidence(act, typ, chr)
+          probs[[idx]] <- getinvProb(node, ev, event, evidence)
+          idx<- idx+1
+        }
+      }
+    }
+  }
+  return(probs)
+}
 
 
 # Actor nodes will be indexed by Action, Type and character
 
+act_probs <- getActionInvCpt()
+rct_probs <- getReactionInvCpt()
+
+#game_net_full <- model2network("[Actor Character][Reactor Character][Actor Type|Actor Character][Reactor Type|Reactor Character][Actor Strength|Actor Type:Actor Character][Actor Defense|Actor Type:Actor Character][Actor Attack|Actor Type:Actor Character][Reactor Strength|Reactor Type:Reactor Character][Reactor Defense|Reactor Type:Reactor Character][Reactor Attack|Reactor Type:Reactor Character][Action|Actor Strength:Actor Defense:Actor Attack][Reaction|Reactor Strength:Reactor Defense:Reactor Attack:Action][IMG|Action:Reaction:Actor Character:Reactor Character:Reactor Type:Actor Type]") 
 
 
+#game_net_full <- model2network("[Z][Actor Character][Reactor Character][Actor Type|Actor Character][Reactor Type|Reactor Character][Actor Strength|Actor Type:Actor Character][Actor Defense|Actor Type:Actor Character][Actor Attack|Actor Type:Actor Character][Reactor Strength|Reactor Type:Reactor Character][Reactor Defense|Reactor Type:Reactor Character][Reactor Attack|Reactor Type:Reactor Character][Action|Actor Strength:Actor Defense:Actor Attack][Reaction|Reactor Strength:Reactor Defense:Reactor Attack:Action][IMG|Action:Reaction:Actor Character:Reactor Character:Reactor Type:Actor Type:Z]") 
+#graphviz.plot(game_net_full, shape="rectangle") 
