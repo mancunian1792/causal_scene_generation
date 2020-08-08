@@ -48,7 +48,7 @@ class GameCharacterFullData(Dataset):
     else:
       d = self.test_df.iloc[idx]
       image = Image.open(self.test_path + d["filename"] + ".png").convert("RGB")
-    
+        
     # Extracting only the action reaction labels, coz that's what we condition on.
     actor = torch.tensor(d[["actor_name_Satyr", "actor_name_Golem"]].tolist(), dtype=torch.float32)
     actor_idx = actor.nonzero()[:, 0]
@@ -64,10 +64,16 @@ class GameCharacterFullData(Dataset):
 
 
     action = torch.tensor(d[["actor_action_Attacking", "actor_action_Taunt", "actor_action_Walking"]].tolist(), dtype=torch.float32)
-    reaction = torch.tensor(d[["reactor_action_Attacking", "reactor_action_Dying", "reactor_action_Hurt", "reactor_action_Idle"]].tolist(), dtype=torch.float32)
+    reaction = torch.tensor(d[["reactor_action_Dying", "reactor_action_Hurt", "reactor_action_Idle", "reactor_action_Attacking", ]].tolist(), dtype=torch.float32)
 
-
-    label = torch.tensor(d[1:].tolist(), dtype=torch.float32)
+    cols_order = ["actor_name_Satyr", "actor_name_Golem", "actor_type_satyr1",
+             "actor_type_satyr2", "actor_type_satyr3", "actor_type_golem1", "actor_type_golem2",
+             "actor_type_golem3", "actor_action_Attacking", "actor_action_Taunt", "actor_action_Walking",
+             "reactor_name_Satyr", "reactor_name_Golem", "reactor_type_satyr1", "reactor_type_satyr2",
+             "reactor_type_satyr3", "reactor_type_golem1", "reactor_type_golem2", "reactor_type_golem3",
+             "reactor_action_Dying", "reactor_action_Hurt", "reactor_action_Idle", "reactor_action_Attacking"]
+    
+    label = torch.tensor(d[cols_order].tolist(), dtype=torch.float32)
     if self.transforms is not None:
         
         xp = self.transforms(image)
@@ -93,7 +99,3 @@ def setup_data_loaders(dataset, root_path, batch_size, transforms):
     test_loader = DataLoader(test_dataset, shuffle=True, batch_size=batch_size)
 
     return train_loader, test_loader
-
-
-        
-
