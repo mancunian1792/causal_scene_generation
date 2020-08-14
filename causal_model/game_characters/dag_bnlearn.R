@@ -1,6 +1,7 @@
 ## Loading required packages.
 library(bnlearn)
 library(Rgraphviz)
+library(gRain)
 
 
 ## Create the dag
@@ -198,8 +199,8 @@ getRctCptNode <- function(node){
 act_probs <- getActionInvCpt()
 rct_probs <- getReactionInvCpt()
 
-#game_net_full <- model2network("[Actor Character][Reactor Character][Actor Type|Actor Character][Reactor Type|Reactor Character][Actor Strength|Actor Type:Actor Character][Actor Defense|Actor Type:Actor Character][Actor Attack|Actor Type:Actor Character][Reactor Strength|Reactor Type:Reactor Character][Reactor Defense|Reactor Type:Reactor Character][Reactor Attack|Reactor Type:Reactor Character][Action|Actor Strength:Actor Defense:Actor Attack][Reaction|Reactor Strength:Reactor Defense:Reactor Attack:Action][IMG|Action:Reaction:Actor Character:Reactor Character:Reactor Type:Actor Type]") 
+game_net_full <- model2network("[Actor Character][Reactor Character][Actor Type|Actor Character][Reactor Type|Reactor Character][Actor Strength|Actor Type:Actor Character][Actor Defense|Actor Type:Actor Character][Actor Attack|Actor Type:Actor Character][Reactor Strength|Reactor Type:Reactor Character][Reactor Defense|Reactor Type:Reactor Character][Reactor Attack|Reactor Type:Reactor Character][Action|Actor Strength:Actor Defense:Actor Attack][Reaction|Reactor Strength:Reactor Defense:Reactor Attack:Action][IMG|Action:Reaction:Actor Character:Reactor Character:Reactor Type:Actor Type]") 
 
 
 #game_net_full <- model2network("[Z][Actor Character][Reactor Character][Actor Type|Actor Character][Reactor Type|Reactor Character][Actor Strength|Actor Type:Actor Character][Actor Defense|Actor Type:Actor Character][Actor Attack|Actor Type:Actor Character][Reactor Strength|Reactor Type:Reactor Character][Reactor Defense|Reactor Type:Reactor Character][Reactor Attack|Reactor Type:Reactor Character][Action|Actor Strength:Actor Defense:Actor Attack][Reaction|Reactor Strength:Reactor Defense:Reactor Attack:Action][IMG|Action:Reaction:Actor Character:Reactor Character:Reactor Type:Actor Type:Z]") 
-#graphviz.plot(game_net_full, shape="rectangle") 
+graphviz.plot(game_net_full, shape="rectangle") 
