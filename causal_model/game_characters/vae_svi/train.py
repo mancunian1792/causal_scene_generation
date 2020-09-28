@@ -34,13 +34,14 @@ def train(args, DATA_PATH):
     # setup the VAE
     vae = VAE(use_cuda=args.cuda, num_labels = 17)
 
-    # setup the optimizer
-    adam_args = {"lr": args.learning_rate}
-    optimizer = Adam(adam_args)
+    # setup the exponential learning rate scheduler
+    optimizer = torch.optim.Adam
+    scheduler = pyro.optim.ExponentialLR({'optimizer': optimizer, 'optim_args': {'lr': args.learning_rate}, 'gamma': 0.1})
+
 
     # setup the inference algorithm
     elbo = JitTrace_ELBO() if args.jit else Trace_ELBO()
-    svi = SVI(vae.model, vae.guide, optimizer, loss=elbo)
+    svi = SVI(vae.model, vae.guide, scheduler, loss=elbo)
 
    
      # setup visdom for visualization
@@ -138,4 +139,4 @@ if __name__ == '__main__':
     model, optimizer = train(args, DATA_PATH)
     t = time.time()
     torch.save(model.state_dict(), MODEL_PATH+"vae_model"+str(t)+".pkl")
-    optimizer.save(MODEL_PATH+"optimizer"+str(t)+".pkl")
+    scheduler.save(MODEL_PATH+"optimizer"+str(t)+".pkl")
